@@ -1,74 +1,84 @@
 {
-  description = "Custom effects for OpenRGB";
+  description = "Custom wave effects for OpenRGB";
 
   inputs = {
-    nixpkgs.url = "github:nixos/nixpkgs?ref=nixos-unstable";
+    nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
+    flake-utils.url = "github:numtide/flake-utils";
   };
 
-  outputs = { self, nixpkgs }:
-    let
-      system = "x86_64-linux";
-      pkgs = nixpkgs.legacyPackages.${system};
-    in
-    {
-      packages.${system}.default = pkgs.rustPlatform.buildRustPackage {
-        pname = "openrgb-effects";
-        version = "0.1.0";
-        src = ./.;
-        cargoLock.lockFile = ./Cargo.lock;
-      };
+  outputs = { self, nixpkgs, flake-utils, ... }:
+    flake-utils.lib.eachDefaultSystem (system:
+      let
+        pkgs = import nixpkgs {
+          inherit system;
+        };
 
-      devShells.${system}.default = pkgs.mkShell {
-        buildInputs = with pkgs; [
-          cargo
-          rustc
-          rust-analyzer
-          clippy
-          rustfmt
-        ];
-      };
+        openrgb-effects = pkgs.rustPlatform.buildRustPackage {
+          pname = "openrgb-effects";
+          version = "1.0.0";
+          src = ./.;
+          cargoLock.lockFile = ./Cargo.lock;
 
-      nixosModules.default = { config, lib, pkgs, ... }:
-        with lib;
-        let
-          cfg = config.services.openrgb-effects;
-        in {
-          options.services.openrgb-effects = {
-            enable = mkEnableOption "OpenRGB effects service";
+          meta = with pkgs.lib; {
+            description = "Custom wave effects for OpenRGB";
+            license = licenses.mit;
+            maintainers = [];
+            platforms = platforms.linux;
+          };
+        };
+      in
+      {
+        packages = {
+          default = openrgb-effects;
+          openrgb-effects = openrgb-effects;
+        };
 
-            package = mkOption {
-              type = types.package;
-              default = self.packages.${system}.default;
-              description = "The openrgb-effects package to use";
-            };
+        devShells.default = pkgs.mkShell {
+          buildInputs = with pkgs; [
+            cargo
+            rustfmt
+            rust-analyzer
+            clippy
+          ];
+        };
+      }
+    ) // {
+      nixosModules = {
+        default = { config, lib, pkgs, ... }: {
+          imports = [];
+
+          options = with lib; {
+            services.openrgb-effects.enable = mkEnableOption "OpenRGB effects service";
           };
 
-          config = mkIf cfg.enable {
+          config = with lib; let
+            cfg = config.services.openrgb-effects;
+          in mkIf cfg.enable {
             systemd.services.openrgb-effects = {
-              description = "OpenRGB Custom Effects";
-              wantedBy = [ "multi-user.target" ];
+              description = "OpenRGB Custom Wave Effects";
               after = [ "network.target" ];
+              wantedBy = [ "multi-user.target" ];
 
               serviceConfig = {
                 ExecStart = "${cfg.package}/bin/openrgb-effects";
-                Restart = "always";
-                RestartSec = "10s";
+                Restart = "on-failure";
+                RestartSec = cfg.timeBeforeRestart;
+                Type = "simple";
 
-                # Security hardening
                 DynamicUser = true;
-                SupplementaryGroups = [ "i2c" ]; # For SMBus access to RGB devices
-
-                # Allow access to OpenRGB (usually runs on localhost:6742)
+                SupplementaryGroups = [ "i2c" ];
                 PrivateNetwork = false;
               };
             };
 
-            # Ensure OpenRGB server is running
             services.hardware.openrgb = {
-              enable = mkDefault true;
+              enable = true;
               motherboard = mkDefault "amd";
             };
           };
         };
+
+        openrgb-effects = self.nixosModules.default;
+      };
     };
 }
