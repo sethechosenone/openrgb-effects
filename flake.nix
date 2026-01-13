@@ -48,7 +48,15 @@
           imports = [];
 
           options = with lib; {
-            services.openrgb-effects.enable = mkEnableOption "OpenRGB effects service";
+            services.openrgb-effects = {
+              enable = mkEnableOption "OpenRGB effects service";
+
+              package = mkOption {
+                type = types.package;
+                default = self.packages.${pkgs.system}.default;
+                description = "The openrgb-effects package to use";
+              };
+            };
           };
 
           config = with lib; let
@@ -62,7 +70,7 @@
               serviceConfig = {
                 ExecStart = "${cfg.package}/bin/openrgb-effects";
                 Restart = "on-failure";
-                RestartSec = cfg.timeBeforeRestart;
+                RestartSec = "10s";
                 Type = "simple";
 
                 DynamicUser = true;
